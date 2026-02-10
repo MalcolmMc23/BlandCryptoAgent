@@ -10,9 +10,9 @@ function getPool(): Pool {
     return global.pgPool;
   }
 
-  const connectionString = process.env.DATABASE_URL;
+  const connectionString = resolveConnectionString();
   if (!connectionString) {
-    throw new Error("DATABASE_URL is required");
+    throw new Error("DATABASE_URL (or DATABASE_PUBLIC_URL) is required");
   }
 
   const pool = new Pool({
@@ -26,6 +26,46 @@ function getPool(): Pool {
   }
 
   return pool;
+}
+
+function normalizeEnvUrl(value?: string): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const trimmed = value.trim().replace(/^['"]|['"]$/g, "");
+  if (!trimmed) {
+    return undefined;
+  }
+
+  return trimmed;
+}
+
+function isValidPostgresUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "postgresql:" || parsed.protocol === "postgres:";
+  } catch {
+    return false;
+  }
+}
+
+function resolveConnectionString(): string | undefined {
+  const primary = normalizeEnvUrl(process.env.DATABASE_URL);
+  if (primary && isValidPostgresUrl(primary)) {
+    return primary;
+  }
+
+  const fallback = normalizeEnvUrl(process.env.DATABASE_PUBLIC_URL);
+  if (fallback && isValidPostgresUrl(fallback)) {
+    return fallback;
+  }
+
+  if (primary || fallback) {
+    throw new Error("Invalid Postgres URL in DATABASE_URL/DATABASE_PUBLIC_URL");
+  }
+
+  return undefined;
 }
 
 let schemaInitPromise: Promise<void> | null = null;
