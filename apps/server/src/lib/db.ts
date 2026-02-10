@@ -5,26 +5,31 @@ declare global {
   var pgPool: Pool | undefined;
 }
 
-const connectionString = process.env.DATABASE_URL;
+function getPool(): Pool {
+  if (global.pgPool) {
+    return global.pgPool;
+  }
 
-if (!connectionString) {
-  throw new Error("DATABASE_URL is required");
-}
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    throw new Error("DATABASE_URL is required");
+  }
 
-export const pool =
-  global.pgPool ||
-  new Pool({
+  const pool = new Pool({
     connectionString,
     max: 10,
     idleTimeoutMillis: 30_000
   });
 
-if (process.env.NODE_ENV !== "production") {
-  global.pgPool = pool;
+  if (process.env.NODE_ENV !== "production") {
+    global.pgPool = pool;
+  }
+
+  return pool;
 }
 
 export async function withTransaction<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
-  const client = await pool.connect();
+  const client = await getPool().connect();
   try {
     await client.query("BEGIN");
     const result = await fn(client);
@@ -37,3 +42,7 @@ export async function withTransaction<T>(fn: (client: PoolClient) => Promise<T>)
     client.release();
   }
 }
+
+export const pool = {
+  query: async <T>(text: string, params?: unknown[]) => getPool().query<T>(text, params)
+};
