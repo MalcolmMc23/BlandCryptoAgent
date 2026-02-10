@@ -6,8 +6,6 @@
   ],
   "scripts": {
     "dev:server": "npm --workspace @bland/server run dev",
-    "dev:mobile": "npm --workspace @bland/mobile run start",
-    "prisma:generate": "npm --workspace @bland/server run prisma:generate",
-    "prisma:migrate": "npm --workspace @bland/server run prisma:migrate"
+    "dev:mobile": "npm --workspace @bland/mobile run start"
   }
 }

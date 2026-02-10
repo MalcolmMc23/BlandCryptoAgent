@@ -1,8 +1,7 @@
-import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { prisma } from "@/lib/db";
+import { withTransaction } from "@/lib/db";
 import { normalizeUsername } from "@/lib/utils";
 
 const bodySchema = z.object({
@@ -28,30 +27,40 @@ export async function POST(req: Request) {
   }
 
   try {
-    const result = await prisma.$transaction(async (tx) => {
-      let user = await tx.user.findUnique({ where: { username } });
+    const result = await withTransaction(async (client) => {
+      const upsertUser = await client.query<{
+        id: string;
+        username: string;
+      }>(
+        `
+          INSERT INTO users (username)
+          VALUES ($1)
+          ON CONFLICT (username) DO UPDATE SET username = EXCLUDED.username
+          RETURNING id, username
+        `,
+        [username]
+      );
 
-      if (!user) {
-        user = await tx.user.create({ data: { username } });
+      const user = upsertUser.rows[0];
 
-        await tx.account.create({
-          data: {
-            userId: user.id,
-            usdBalanceCents: STARTING_BALANCE_CENTS
-          }
-        });
-      }
+      await client.query(
+        `
+          INSERT INTO accounts (user_id, usd_balance_cents)
+          VALUES ($1, $2)
+          ON CONFLICT (user_id) DO NOTHING
+        `,
+        [user.id, STARTING_BALANCE_CENTS]
+      );
 
-      const account = await tx.account.findUnique({
-        where: { userId: user.id },
-        select: { usdBalanceCents: true }
-      });
+      const account = await client.query<{ usd_balance_cents: number }>(
+        `SELECT usd_balance_cents FROM accounts WHERE user_id = $1`,
+        [user.id]
+      );
 
-      if (!account) {
-        throw new Error("Account missing for user.");
-      }
-
-      return { user, usdBalanceCents: account.usdBalanceCents };
+      return {
+        user,
+        usdBalanceCents: account.rows[0].usd_balance_cents
+      };
     });
 
     return NextResponse.json({
@@ -61,14 +70,7 @@ export async function POST(req: Request) {
       },
       usd_balance_cents: result.usdBalanceCents
     });
-  } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-      return NextResponse.json(
-        { error: "Username already exists." },
-        { status: 409 }
-      );
-    }
-
+  } catch {
     return NextResponse.json({ error: "Failed to create user." }, { status: 500 });
   }
 }
