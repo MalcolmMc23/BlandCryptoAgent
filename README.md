@@ -1,37 +1,32 @@
-# Bland Crypto Agent Demo
+# Bland Crypto Agent Demo (Web Only)
 
-Monorepo with:
-- Next.js API server (`apps/server`)
-- React Native app via Expo (`apps/mobile`)
-- Postgres via plain `pg` (no Prisma)
+This project is a Next.js web app with API routes and a basic browser UI for:
 
-## 1) Install dependencies
+- new user
+- get fake prices (BTC/ETH/SOL)
+- buy
+- sell
+- check balance (by username)
+
+## Setup
+
+1. Install:
 
 ```bash
 npm install
 ```
 
-## 2) Configure environment
-
-Create `/Users/malcolm/NewDocs/BlandCryptoAgent/apps/server/.env`:
+2. Create `/Users/malcolm/NewDocs/BlandCryptoAgent/apps/server/.env`:
 
 ```bash
 DATABASE_URL="postgresql://USER:PASSWORD@HOST:5432/DBNAME?sslmode=require"
 ```
 
-Create `/Users/malcolm/NewDocs/BlandCryptoAgent/apps/mobile/.env`:
-
-```bash
-EXPO_PUBLIC_API_URL="http://localhost:3000"
-```
-
-For physical device testing, use your machine LAN IP for `EXPO_PUBLIC_API_URL`, e.g. `http://192.168.1.12:3000`.
-
-## 3) Initialize DB tables
-
-Run this once against your Postgres database:
+3. Run this SQL once on your Postgres DB:
 
 ```sql
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   username TEXT NOT NULL UNIQUE,
@@ -62,27 +57,15 @@ CREATE TABLE IF NOT EXISTS transactions (
 );
 ```
 
-If `gen_random_uuid()` is unavailable, enable pgcrypto:
-
-```sql
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-```
-
-## 4) Start server
+4. Start dev server:
 
 ```bash
-npm run dev:server
+npm run dev
 ```
 
-Server runs on `http://localhost:3000`.
+Then open [http://localhost:3000](http://localhost:3000).
 
-## 5) Start React Native app
-
-```bash
-npm run dev:mobile
-```
-
-## Endpoint set implemented
+## Endpoints
 
 - `GET /api/health`
 - `POST /api/users`
@@ -91,10 +74,3 @@ npm run dev:mobile
 - `GET /api/balance/:username`
 - `POST /api/trade/buy`
 - `POST /api/trade/sell`
-
-## Notes
-
-- New users start with `$10,000` (`1,000,000` cents).
-- Prices are deterministic fake values for `BTC`, `ETH`, and `SOL`.
-- Buy/sell are paper trades and update balances + holdings.
-- Transactions are recorded in `transactions`.

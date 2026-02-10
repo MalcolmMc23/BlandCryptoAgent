@@ -4,6 +4,3 @@ node_modules
 .DS_Store
 npm-debug.log*
 apps/server/.next
-apps/mobile/.expo
-apps/mobile/dist
-apps/mobile/web-build

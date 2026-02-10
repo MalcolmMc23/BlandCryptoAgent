@@ -2,10 +2,11 @@
   "name": "bland-crypto-agent",
   "private": true,
   "workspaces": [
-    "apps/*"
+    "apps/server"
   ],
   "scripts": {
-    "dev:server": "npm --workspace @bland/server run dev",
-    "dev:mobile": "npm --workspace @bland/mobile run start"
+    "dev": "npm --workspace @bland/server run dev",
+    "build": "npm --workspace @bland/server run build",
+    "start": "npm --workspace @bland/server run start"
   }
 }
