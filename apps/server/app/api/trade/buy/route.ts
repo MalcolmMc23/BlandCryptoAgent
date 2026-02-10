@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { getPrice } from "@/lib/prices";
-import { withTransaction } from "@/lib/db";
+import { isDbUnavailableError, withTransaction } from "@/lib/db";
+import { demoBuy } from "@/lib/demoStore";
 import { normalizeUsername, symbolSchema } from "@/lib/utils";
 
 const bodySchema = z.object({
@@ -105,7 +106,18 @@ export async function POST(req: Request) {
       usd_spent: usdAmount,
       usd_balance_cents: result.updatedBalance
     });
-  } catch {
-    return NextResponse.json({ error: "Buy failed." }, { status: 500 });
+  } catch (error) {
+    if (isDbUnavailableError(error)) {
+      const demo = demoBuy(username, symbol, usdAmount);
+      if ("error" in demo) {
+        if (demo.error === "USER_NOT_FOUND") {
+          return NextResponse.json({ error: "User not found." }, { status: 404 });
+        }
+        return NextResponse.json({ error: "Insufficient USD balance." }, { status: 400 });
+      }
+      return NextResponse.json(demo);
+    }
+    const message = error instanceof Error ? error.message : "Buy failed.";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

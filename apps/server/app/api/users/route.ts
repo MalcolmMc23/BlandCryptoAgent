@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { withTransaction } from "@/lib/db";
+import { isDbUnavailableError, withTransaction } from "@/lib/db";
+import { demoCreateUser } from "@/lib/demoStore";
 import { normalizeUsername } from "@/lib/utils";
 
 const bodySchema = z.object({
@@ -71,6 +72,9 @@ export async function POST(req: Request) {
       usd_balance_cents: result.usdBalanceCents
     });
   } catch (error) {
+    if (isDbUnavailableError(error)) {
+      return NextResponse.json(demoCreateUser(username));
+    }
     const message = error instanceof Error ? error.message : "Failed to create user.";
     return NextResponse.json({ error: message }, { status: 500 });
   }
