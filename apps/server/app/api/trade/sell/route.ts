@@ -1,9 +1,8 @@
-import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { prisma } from "@/lib/db";
 import { getPrice } from "@/lib/prices";
+import { withTransaction } from "@/lib/db";
 import { normalizeUsername, symbolSchema } from "@/lib/utils";
 
 const bodySchema = z.object({
@@ -27,85 +26,74 @@ export async function POST(req: Request) {
 
   const username = normalizeUsername(parsed.data.username);
   const symbol = parsed.data.symbol;
+  const qty = Number(parsed.data.qty);
 
-  let qty: Prisma.Decimal;
-  try {
-    qty = new Prisma.Decimal(parsed.data.qty);
-  } catch {
-    return NextResponse.json({ error: "qty must be a valid decimal." }, { status: 400 });
-  }
-
-  if (qty.lte(0)) {
-    return NextResponse.json({ error: "qty must be greater than zero." }, { status: 400 });
+  if (!Number.isFinite(qty) || qty <= 0) {
+    return NextResponse.json({ error: "qty must be a valid positive number." }, { status: 400 });
   }
 
   const priceUsd = getPrice(symbol);
+  const usdReceived = qty * priceUsd;
+  const usdReceivedCents = Math.round(usdReceived * 100);
 
   try {
-    const result = await prisma.$transaction(async (tx) => {
-      const user = await tx.user.findUnique({ where: { username } });
+    const result = await withTransaction(async (client) => {
+      const userResult = await client.query<{ id: string }>(
+        `SELECT id FROM users WHERE username = $1 LIMIT 1`,
+        [username]
+      );
+
+      const user = userResult.rows[0];
+
       if (!user) {
         return { error: "USER_NOT_FOUND" as const };
       }
 
-      const account = await tx.account.findUnique({ where: { userId: user.id } });
+      const accountResult = await client.query<{ usd_balance_cents: number }>(
+        `SELECT usd_balance_cents FROM accounts WHERE user_id = $1 FOR UPDATE`,
+        [user.id]
+      );
+
+      const account = accountResult.rows[0];
+
       if (!account) {
         return { error: "ACCOUNT_NOT_FOUND" as const };
       }
 
-      const holding = await tx.holding.findUnique({
-        where: {
-          userId_symbol: {
-            userId: user.id,
-            symbol
-          }
-        }
-      });
+      const holdingResult = await client.query<{ amount: string }>(
+        `SELECT amount::text AS amount FROM holdings WHERE user_id = $1 AND symbol = $2 FOR UPDATE`,
+        [user.id, symbol]
+      );
 
-      if (!holding || holding.amount.lt(qty)) {
+      const holding = holdingResult.rows[0];
+
+      if (!holding || Number(holding.amount) < qty) {
         return { error: "INSUFFICIENT_HOLDINGS" as const };
       }
 
-      const newHoldingAmount = holding.amount.minus(qty);
+      const newHoldingAmount = Number(holding.amount) - qty;
 
-      await tx.holding.update({
-        where: {
-          userId_symbol: {
-            userId: user.id,
-            symbol
-          }
-        },
-        data: {
-          amount: newHoldingAmount
-        }
-      });
+      await client.query(
+        `UPDATE holdings SET amount = $1 WHERE user_id = $2 AND symbol = $3`,
+        [newHoldingAmount, user.id, symbol]
+      );
 
-      const usdReceived = qty.mul(priceUsd);
-      const usdReceivedCents = usdReceived.mul(100).toDecimalPlaces(0);
+      const updatedBalance = account.usd_balance_cents + usdReceivedCents;
 
-      const updatedAccount = await tx.account.update({
-        where: { userId: user.id },
-        data: {
-          usdBalanceCents: account.usdBalanceCents + usdReceivedCents.toNumber()
-        }
-      });
+      await client.query(
+        `UPDATE accounts SET usd_balance_cents = $1 WHERE user_id = $2`,
+        [updatedBalance, user.id]
+      );
 
-      await tx.transaction.create({
-        data: {
-          userId: user.id,
-          type: "SELL",
-          symbol,
-          priceUsd: new Prisma.Decimal(priceUsd),
-          qty,
-          usdAmount: usdReceived
-        }
-      });
+      await client.query(
+        `
+          INSERT INTO transactions (user_id, type, symbol, price_usd, qty, usd_amount)
+          VALUES ($1, 'SELL', $2, $3, $4, $5)
+        `,
+        [user.id, symbol, priceUsd, qty, usdReceived]
+      );
 
-      return {
-        ok: true as const,
-        usdReceived,
-        usdBalanceCents: updatedAccount.usdBalanceCents
-      };
+      return { updatedBalance };
     });
 
     if ("error" in result) {
@@ -123,8 +111,8 @@ export async function POST(req: Request) {
       symbol,
       price_usd: priceUsd,
       qty_sold: qty.toString(),
-      usd_received: result.usdReceived.toNumber(),
-      usd_balance_cents: result.usdBalanceCents
+      usd_received: usdReceived,
+      usd_balance_cents: result.updatedBalance
     });
   } catch {
     return NextResponse.json({ error: "Sell failed." }, { status: 500 });

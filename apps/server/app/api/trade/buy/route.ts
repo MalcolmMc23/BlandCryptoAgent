@@ -1,9 +1,8 @@
-import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { prisma } from "@/lib/db";
 import { getPrice } from "@/lib/prices";
+import { withTransaction } from "@/lib/db";
 import { normalizeUsername, symbolSchema } from "@/lib/utils";
 
 const bodySchema = z.object({
@@ -30,77 +29,62 @@ export async function POST(req: Request) {
   const usdAmount = parsed.data.usd_amount;
   const usdCents = Math.round(usdAmount * 100);
   const priceUsd = getPrice(symbol);
+  const qty = usdAmount / priceUsd;
 
   try {
-    const result = await prisma.$transaction(async (tx) => {
-      const user = await tx.user.findUnique({ where: { username } });
+    const result = await withTransaction(async (client) => {
+      const userResult = await client.query<{ id: string }>(
+        `SELECT id FROM users WHERE username = $1 LIMIT 1`,
+        [username]
+      );
+
+      const user = userResult.rows[0];
+
       if (!user) {
         return { error: "USER_NOT_FOUND" as const };
       }
 
-      const account = await tx.account.findUnique({ where: { userId: user.id } });
+      const accountResult = await client.query<{ usd_balance_cents: number }>(
+        `SELECT usd_balance_cents FROM accounts WHERE user_id = $1 FOR UPDATE`,
+        [user.id]
+      );
+
+      const account = accountResult.rows[0];
+
       if (!account) {
         return { error: "ACCOUNT_NOT_FOUND" as const };
       }
 
-      if (account.usdBalanceCents < usdCents) {
+      if (account.usd_balance_cents < usdCents) {
         return { error: "INSUFFICIENT_USD" as const };
       }
 
-      const qty = new Prisma.Decimal(usdAmount).div(priceUsd);
-      const holding = await tx.holding.findUnique({
-        where: {
-          userId_symbol: {
-            userId: user.id,
-            symbol
-          }
-        }
-      });
+      const updatedBalance = account.usd_balance_cents - usdCents;
 
-      const newHoldingAmount = holding
-        ? holding.amount.plus(qty)
-        : new Prisma.Decimal(qty);
+      await client.query(
+        `UPDATE accounts SET usd_balance_cents = $1 WHERE user_id = $2`,
+        [updatedBalance, user.id]
+      );
 
-      await tx.holding.upsert({
-        where: {
-          userId_symbol: {
-            userId: user.id,
-            symbol
-          }
-        },
-        update: {
-          amount: newHoldingAmount
-        },
-        create: {
-          userId: user.id,
-          symbol,
-          amount: qty
-        }
-      });
+      await client.query(
+        `
+          INSERT INTO holdings (user_id, symbol, amount)
+          VALUES ($1, $2, $3)
+          ON CONFLICT (user_id, symbol)
+          DO UPDATE SET amount = holdings.amount + EXCLUDED.amount
+        `,
+        [user.id, symbol, qty]
+      );
 
-      const updatedAccount = await tx.account.update({
-        where: { userId: user.id },
-        data: {
-          usdBalanceCents: account.usdBalanceCents - usdCents
-        }
-      });
+      await client.query(
+        `
+          INSERT INTO transactions (user_id, type, symbol, price_usd, qty, usd_amount)
+          VALUES ($1, 'BUY', $2, $3, $4, $5)
+        `,
+        [user.id, symbol, priceUsd, qty, usdAmount]
+      );
 
-      await tx.transaction.create({
-        data: {
-          userId: user.id,
-          type: "BUY",
-          symbol,
-          priceUsd: new Prisma.Decimal(priceUsd),
-          qty,
-          usdAmount: new Prisma.Decimal(usdAmount)
-        }
-      });
-
-      return {
-        ok: true as const,
-        qty,
-        usdBalanceCents: updatedAccount.usdBalanceCents
-      };
+      return { updatedBalance };
     });
 
     if ("error" in result) {
@@ -117,9 +101,9 @@ export async function POST(req: Request) {
       ok: true,
       symbol,
       price_usd: priceUsd,
-      qty: result.qty.toString(),
+      qty: qty.toString(),
       usd_spent: usdAmount,
-      usd_balance_cents: result.usdBalanceCents
+      usd_balance_cents: result.updatedBalance
     });
   } catch {
     return NextResponse.json({ error: "Buy failed." }, { status: 500 });
