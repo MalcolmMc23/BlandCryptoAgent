@@ -1,0 +1,56 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Symbol {
+  BTC
+  ETH
+  SOL
+}
+
+enum TradeType {
+  BUY
+  SELL
+}
+
+model User {
+  id           String        @id @default(uuid())
+  username     String        @unique
+  createdAt    DateTime      @default(now())
+  account      Account?
+  holdings     Holding[]
+  transactions Transaction[]
+}
+
+model Account {
+  userId          String @id
+  usdBalanceCents Int
+  user            User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Holding {
+  id     String  @id @default(uuid())
+  userId String
+  symbol Symbol
+  amount Decimal @db.Decimal(32, 12)
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, symbol])
+}
+
+model Transaction {
+  id               String    @id @default(uuid())
+  userId           String
+  type             TradeType
+  symbol           Symbol
+  priceUsd         Decimal   @db.Decimal(20, 8)
+  qty              Decimal   @db.Decimal(32, 12)
+  usdAmount        Decimal   @db.Decimal(20, 8)
+  createdAt        DateTime  @default(now())
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
