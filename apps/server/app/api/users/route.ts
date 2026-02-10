@@ -70,7 +70,8 @@ export async function POST(req: Request) {
       },
       usd_balance_cents: result.usdBalanceCents
     });
-  } catch {
-    return NextResponse.json({ error: "Failed to create user." }, { status: 500 });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to create user.";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
