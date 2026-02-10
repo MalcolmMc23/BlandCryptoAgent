@@ -138,16 +138,3 @@ export const pool = {
     return getPool().query<T>(text, params);
   }
 };
-
-export function isDbUnavailableError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  if (message.includes("password authentication failed")) {
-    return true;
-  }
-  if (message.includes("DATABASE_URL") || message.includes("Invalid Postgres URL")) {
-    return true;
-  }
-
-  const code = (error as { code?: string } | undefined)?.code;
-  return code === "28P01" || code === "ENOTFOUND" || code === "ERR_INVALID_URL";
-}
