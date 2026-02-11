@@ -15,10 +15,15 @@ function getPool(): Pool {
     throw new Error("DATABASE_URL (or DATABASE_PUBLIC_URL) is required");
   }
 
+  const isRailway = connectionString.includes("rlwy.net");
+
   const pool = new Pool({
     connectionString,
     max: 10,
-    idleTimeoutMillis: 30_000
+    idleTimeoutMillis: 30_000,
+    ...(isRailway && {
+      ssl: { rejectUnauthorized: false }
+    })
   });
 
   if (process.env.NODE_ENV !== "production") {
@@ -79,8 +84,12 @@ async function ensureSchema(): Promise<void> {
         CREATE TABLE IF NOT EXISTS users (
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
           username TEXT NOT NULL UNIQUE,
+          phone_number TEXT,
           created_at TIMESTAMPTZ NOT NULL DEFAULT now()
         );
+      `);
+      await pool.query(`
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_number TEXT;
       `);
       await pool.query(`
         CREATE TABLE IF NOT EXISTS accounts (

@@ -30,6 +30,7 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   username TEXT NOT NULL UNIQUE,
+  phone_number TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -68,8 +69,10 @@ Then open [http://localhost:3000](http://localhost:3000).
 ## Endpoints
 
 - `GET /api/health`
-- `POST /api/users`
+- `POST /api/users` (body: `{ username: string, phone_number: string }`)
+- `PUT /api/users` (body: `{ username: string, phone_number: string }`)
 - `GET /api/users/:username`
+- `GET /api/users/by-phone?phone=<phone_number>`
 - `GET /api/prices`
 - `GET /api/balance/:username`
 - `POST /api/trade/buy`

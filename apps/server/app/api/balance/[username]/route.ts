@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 
 import { pool } from "@/lib/db";
+import { getPrice } from "@/lib/prices";
+import type { CryptoSymbol } from "@/lib/utils";
 import { normalizeUsername } from "@/lib/utils";
 
 export async function GET(
@@ -10,8 +12,8 @@ export async function GET(
   const { username: rawUsername } = await params;
   const username = normalizeUsername(rawUsername);
 
-  const userResult = await pool.query<{ id: string; username: string }>(
-    `SELECT id, username FROM users WHERE username = $1 LIMIT 1`,
+  const userResult = await pool.query<{ id: string; username: string; phone_number: string | null }>(
+    `SELECT id, username, phone_number FROM users WHERE username = $1 LIMIT 1`,
     [username]
   );
 
@@ -40,9 +42,23 @@ export async function GET(
     [user.id]
   );
 
+  const holdings = holdingsResult.rows;
+  const holdingsValueUsd = holdings.reduce((sum, holding) => {
+    const symbol = holding.symbol as CryptoSymbol;
+    const amount = Number(holding.amount);
+    const price = getPrice(symbol);
+    return sum + amount * price;
+  }, 0);
+
+  const cashUsd = accountResult.rows[0].usd_balance_cents / 100;
+  const totalValueUsd = cashUsd + holdingsValueUsd;
+
   return NextResponse.json({
     username: user.username,
+    phone_number: user.phone_number,
     usd_balance_cents: accountResult.rows[0].usd_balance_cents,
-    holdings: holdingsResult.rows
+    holdings,
+    total_value_usd: Number(totalValueUsd.toFixed(2)),
+    total_value_cents: Math.round(totalValueUsd * 100)
   });
 }

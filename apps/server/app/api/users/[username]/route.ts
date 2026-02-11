@@ -10,8 +10,8 @@ export async function GET(
   const { username: rawUsername } = await params;
   const username = normalizeUsername(rawUsername);
 
-  const result = await pool.query<{ id: string; username: string }>(
-    `SELECT id, username FROM users WHERE username = $1 LIMIT 1`,
+  const result = await pool.query<{ id: string; username: string; phone_number: string | null }>(
+    `SELECT id, username, phone_number FROM users WHERE username = $1 LIMIT 1`,
     [username]
   );
 

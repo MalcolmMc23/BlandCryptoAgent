@@ -6,6 +6,7 @@ type SymbolType = "BTC" | "ETH" | "SOL";
 
 export default function HomePage() {
   const [username, setUsername] = useState("malcolm");
+  const [phoneNumber, setPhoneNumber] = useState("");
   const [buySymbol, setBuySymbol] = useState<SymbolType>("BTC");
   const [sellSymbol, setSellSymbol] = useState<SymbolType>("BTC");
   const [usdAmount, setUsdAmount] = useState("100");
@@ -43,6 +44,14 @@ export default function HomePage() {
           onChange={(e) => setUsername(e.target.value)}
           style={styles.input}
         />
+        <label style={{ ...styles.label, marginTop: "12px" }}>Phone Number (required)</label>
+        <input
+          value={phoneNumber}
+          onChange={(e) => setPhoneNumber(e.target.value)}
+          placeholder="+1 555-123-4567"
+          style={styles.input}
+          required
+        />
 
         <div style={styles.row}>
           <button style={styles.button} onClick={() => callApi("/api/health")}>Health</button>
@@ -51,14 +60,24 @@ export default function HomePage() {
             onClick={() =>
               callApi("/api/users", {
                 method: "POST",
-                body: JSON.stringify({ username })
+                body: JSON.stringify({ username, phone_number: phoneNumber.trim() })
               })
             }
           >
             Create User
           </button>
           <button style={styles.button} onClick={() => callApi(`/api/users/${encodeURIComponent(username)}`)}>
-            Lookup User
+            Lookup by Username
+          </button>
+          <button
+            style={styles.button}
+            onClick={() =>
+              callApi(
+                `/api/users/by-phone?phone=${encodeURIComponent(phoneNumber.trim())}`
+              )
+            }
+          >
+            Search by Phone
           </button>
           <button style={styles.button} onClick={() => callApi("/api/prices")}>Get Prices</button>
           <button
